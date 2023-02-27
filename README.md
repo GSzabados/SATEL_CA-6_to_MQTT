@@ -32,6 +32,8 @@ COM should be connected to the GND of the ESP.
 
 The alarm control panel communicates with the keypad by a clock synced data signal. The clock has a frequency of 2kHz, and runs for 16 periods together with the data signal, giving 32bits of data. This 32bits is decoded by the ESP and transmitted to MQTT broker as an array of zeros and ones.
 
+![DATA and CLK signal](/DATA_CLK_SIGROK_PulseView.png)
+
 Bit  1: ?  
 Bit  2: ?  
 Bit  3: ?  
@@ -68,6 +70,8 @@ Bit 32: 1 when Zone 1 LED is active
 Unfortunately, I couldn't identify Zone 8 as I haven't got any sensor connected to that one. Also, there are 4 partition LEDs as well that hasn't been idetentified yet.
 
 ## Integrating into Home Assistant
+
+The Wifi settings and the MQTT broker have to be configured before uploading the sketch to your device. Then you can add the following settings into your `configuration.yaml`.
 
 Home Assistant Manually configured MQTT Binary Sensors:
 

@@ -1,0 +1,130 @@
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <EspMQTTClient.h>
+
+// Define the pins we're using
+#define DATA_PIN 33
+#define CLK_PIN 19
+
+// Update with WiFi details and MQTT broker IP address, user, password, etc.
+EspMQTTClient client(
+  "WiFiSSID",           // Your Wifi SSID
+  "WiFiPassword",       // Your WiFi Password
+  "mqtt.server.com",    // MQTT Broker server ip
+  "MQTTUsername",       // Can be omitted if not needed
+  "MQTTPassword",       // Can be omitted if not needed
+  "SATEL",              // Client name that uniquely identify your device
+  1883                  // MQTT Broker server port
+);
+
+// Declare global variables to hold the data and clock states, interrupt times in microseconds, bit count
+volatile bool data_result[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};          // Current message 
+volatile bool prev_data_result[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};     // Previous message
+volatile bool clk_state = false;                                                                          // Current clock state HIGH or LOW
+volatile bool prev_clk_state = false;                                                                     // Previous current clock state HIGH or LOW
+volatile unsigned long interrupt_time = 0;                                                                // Current interrupt's time in microseconds
+volatile unsigned long last_interrupt_time = 0;                                                           // Previous interrupt's time in microseconds
+volatile bool new_data_flag = false;                                                                      // Flag if the message changed from the previous one
+volatile bool data_ready = false;                                                                         // Flag for marking when receiving the message ended, complete and the data is ready for use
+volatile uint32_t bit_count = 0;                                                                          // Counter for the number of bits received from the message
+volatile unsigned long time_now = 0;                                                                      // Current time in milliseconds used for delay
+
+// Define the interrupt service routine for the clock pin
+void IRAM_ATTR clk_isr() {
+
+  interrupt_time = micros();
+
+  if ( bit_count == 0 ) {
+    data_ready = false;
+    new_data_flag = false;
+  }
+  
+  // Consider new message start if it has been longer than 2ms since the last interrupt
+  if (interrupt_time - last_interrupt_time > 2000) {
+    bit_count = 0;
+    new_data_flag = false;
+    data_ready = false;
+  }
+
+  last_interrupt_time = interrupt_time;
+
+  // Read the state of the CLK pin but store the previous state first
+  prev_clk_state = clk_state;
+  clk_state = digitalRead(CLK_PIN);
+
+  // If the CLK pin just transitioned from high to low or from low to high, read the DATA pin
+  if (prev_clk_state != clk_state) {
+    // Wait for 100 microseconds to give the DATA pin time to stabilize and avoid the result of the pullup resistor at clock change
+    delayMicroseconds(100);
+
+    // Store the new bit from the DATA pin
+    data_result[bit_count] = digitalRead(DATA_PIN);
+    // Compare previous data with current one, if changed set flag as true
+    if( data_result[bit_count] != prev_data_result[bit_count] ) {
+      new_data_flag = true;   
+    }
+
+    bit_count = bit_count + 1;
+  }
+
+  // When bit count reaches 32 mark the data ready and copy new data to previous one
+  if (bit_count == 32) {
+    //Serial.println("Data Ready");
+    for (int i = 0;  i < 32; i++) {
+      prev_data_result[i] = data_result[i];
+    }
+      
+    data_ready=true;
+    bit_count=0;
+  }
+}
+
+void setup() {
+  // Set the DATA and CLK pins as inputs
+  pinMode(DATA_PIN, INPUT);
+  pinMode(CLK_PIN, INPUT);
+
+  // Start the serial monitor
+  Serial.begin(115200);
+
+  // Enable interrupts on the CLK pin
+  attachInterrupt(digitalPinToInterrupt(CLK_PIN), clk_isr, CHANGE);
+
+}
+
+void onConnectionEstablished() {
+
+  Serial.println("Connected...");
+
+}
+
+void loop() {
+  // EspMQTTClient Client
+  client.loop();
+
+  // Store time for delay
+  time_now = millis();
+  while( data_ready != true ) {
+    // Wait approx. 1 ms
+    while(millis() < time_now + 1){    
+    }    
+  }
+
+  // Create a JSON document and add the data result array to it
+  StaticJsonDocument<1024> doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < 32; i++) {
+    arr.add(data_result[i]);
+  }
+
+  // Serialize the JSON document into a string
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+
+  // Send the JSON string to the MQTT broker
+  client.publish("satel/alarm/raw_data", jsonStr.c_str(), true);
+
+  // Wait approx. 1500 ms to do not flood MQTT broker with messages LED flashing is about 500 ms, so it does not miss the changes there
+  while(millis() < time_now + 1500){  
+  } 
+}

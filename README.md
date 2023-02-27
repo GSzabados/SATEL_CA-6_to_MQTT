@@ -1,7 +1,8 @@
 # SATEL CA-6 to MQTT
 
-Firmware for an ESP controller to monitor a Satel CA-6 P alarm control panel
-Tested with an M5-Stack ATOM
+Firmware for an ESP controller to monitor a Satel CA-6 P alarm control panel.
+Tested with an M5-Stack ATOM.  
+The project is intended only for monitoring and has not been built for controlling the alarm control panel like the physical keypad.
 
 ## Background:
 
